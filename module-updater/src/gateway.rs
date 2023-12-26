@@ -13,6 +13,8 @@ pub enum GatewayError {
     Overflow,
     #[error("Serialization or deserialization of data failed: {0}")]
     SerDe(postcard::Error),
+    #[error("Invalid response given by the gateway")]
+    InvalidResponse,
 }
 
 pub struct GatewayDriver {
@@ -60,13 +62,14 @@ impl GatewayDriver {
         encoded[j] = 0xff; // terminator
         j += 1;
 
+        println!("TX: {:X?}", &encoded[..j-1]);
         self.port
             .write_all(&encoded[..j])
-            .with_context(|| format!("failed to send {:X?}", &encoded[..j]))?;
+            .with_context(|| format!("failed to send {:0X?}", &encoded[..j]))?;
         Ok(())
     }
 
-    pub fn read(&mut self) -> Result<GatewayPacket> {
+    pub fn read_with_timeout(&mut self, timeout: Duration) -> Result<GatewayPacket> {
         let start = Instant::now();
 
         let mut buffer = [0u8; 256];
@@ -78,7 +81,7 @@ impl GatewayDriver {
             let mut recv = [0u8; 1];
             match self.port.read_exact(&mut recv) {
                 Err(e) => {
-                    if start + self.timeout < Instant::now() {
+                    if start + timeout < Instant::now() {
                         return Err(GatewayError::ReadTimeout(e).into());
                     }
                 }
@@ -104,6 +107,22 @@ impl GatewayDriver {
                 }
             }
         }
-        Ok(postcard::from_bytes::<GatewayPacket>(&buffer[j..]).map_err(GatewayError::SerDe)?)
+        println!("RX: {:0X?}", &buffer[..j]);
+        Ok(postcard::from_bytes::<GatewayPacket>(&buffer[..j]).map_err(GatewayError::SerDe)?)
+    }
+
+    pub fn read(&mut self) -> Result<GatewayPacket> {
+        self.read_with_timeout(self.timeout)
+    }
+
+    pub fn ping(&mut self) -> Result<Duration> {
+        let start = Instant::now();
+        self.write(HostPacket::PingRequest)
+            .with_context(|| format!("write failed"))?;
+
+        match self.read().with_context(|| format!("read failed"))? {
+            GatewayPacket::PingResponse => Ok(Instant::now() - start),
+            _resp => Err(GatewayError::InvalidResponse.into()),
+        }
     }
 }
