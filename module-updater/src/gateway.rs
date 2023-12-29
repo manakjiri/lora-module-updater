@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use gateway_host_schema::{self, GatewayPacket, HostPacket};
 use postcard;
 use serialport::SerialPort;
-use std::time::{Duration, Instant};
+use std::{time::{Duration, Instant}, thread::sleep};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -62,10 +62,12 @@ impl GatewayDriver {
         encoded[j] = 0xff; // terminator
         j += 1;
 
-        println!("TX: {:X?}", &encoded[..j-1]);
+        println!("TX {}: {:0X?}", j, &encoded[..j]);
         self.port
             .write_all(&encoded[..j])
             .with_context(|| format!("failed to send {:0X?}", &encoded[..j]))?;
+        
+        sleep(Duration::from_millis(500));
         Ok(())
     }
 
@@ -107,7 +109,7 @@ impl GatewayDriver {
                 }
             }
         }
-        println!("RX: {:0X?}", &buffer[..j]);
+        println!("RX {}: {:0X?}", j, &buffer[..j]);
         Ok(postcard::from_bytes::<GatewayPacket>(&buffer[..j]).map_err(GatewayError::SerDe)?)
     }
 
