@@ -5,7 +5,7 @@ use clap::Parser;
 use gateway::GatewayDriver;
 use gateway_host_schema::*;
 use ring::digest;
-use std::{ops::AddAssign, path::Path, time::Duration};
+use std::{path::Path, time::Duration, thread::sleep};
 
 /// LoRa module OTA updater
 #[derive(Parser)]
@@ -66,7 +66,7 @@ fn main() -> Result<()> {
             if s.in_progress {
                 eprintln!("Aborting previously started update");
                 gateway.write(HostPacket::OtaAbort)?;
-                match gateway.read_with_timeout(Duration::from_secs(5))? {
+                match gateway.read_with_timeout(Duration::from_secs(15))? {
                     GatewayPacket::OtaAbortAck => {}
                     p => {
                         return Err(anyhow!("failed to abort the OTA update: {:?}", p));
@@ -85,7 +85,7 @@ fn main() -> Result<()> {
         binary_sha256: binary_checksum,
         block_size: block_size as u16,
     }))?;
-    match gateway.read_with_timeout(Duration::from_secs(5))? {
+    match gateway.read_with_timeout(Duration::from_secs(15))? {
         GatewayPacket::OtaInitAck => { /* update started */ }
         p => {
             return Err(anyhow!("failed to initialize the OTA update: {:?}", p));
@@ -95,8 +95,7 @@ fn main() -> Result<()> {
     let mut indexes_to_transmit: Vec<u16> = Vec::with_capacity(index_count);
     let mut highest_index: u16 = 0;
 
-    while !indexes_to_transmit.is_empty() || highest_index != index_count as u16 {
-
+    while !indexes_to_transmit.is_empty() || highest_index != index_count as u16{
         let i = match indexes_to_transmit.pop() {
             Some(i) => i as usize,
             None => {
@@ -124,12 +123,18 @@ fn main() -> Result<()> {
                 GatewayPacket::OtaStatus(status) => {
                     for na in status.not_acked {
                         if !indexes_to_transmit.contains(&na) {
-                            eprintln!("Scheduling {} to retransmit along with {:?}", na, indexes_to_transmit);
+                            eprintln!(
+                                "Scheduling {} to retransmit along with {:?}",
+                                na, indexes_to_transmit
+                            );
                             indexes_to_transmit.push(na);
                         }
                     }
+                    sleep(Duration::from_secs(1));
                 }
-                //GatewayPacket::OtaDone => {}
+                GatewayPacket::OtaDone => {
+                    println!("done");
+                }
                 resp => {
                     eprintln!("Unexpected response from gateway during OTA: {:?}", resp);
                 }

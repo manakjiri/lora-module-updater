@@ -40,29 +40,24 @@ impl GatewayDriver {
         let max_val = 254;
         let mut i = 0;
         let mut j = 0;
-        let mut next_add = false;
         while i < to_encode.len() {
             if j >= encoded.len() {
                 return Err(GatewayError::Overflow.into());
             }
-            if to_encode[i] == max_val {
-                next_add = true;
-                i += 1;
-                continue;
-            }
-            encoded[j] = if next_add {
-                to_encode[i] + max_val
+            if to_encode[i] >= max_val {
+                encoded[j] = max_val;
+                encoded[j + 1] = to_encode[i] - max_val;
+                j += 2;
             } else {
-                to_encode[i]
-            };
-            j += 1;
+                encoded[j] = to_encode[i];
+                j += 1;
+            }
             i += 1;
-            next_add = false;
         }
         encoded[j] = 0xff; // terminator
         j += 1;
 
-        println!("TX {}: {:0X?}", j, &encoded[..j]);
+        //println!("TX {}: {:0X?}", j, &encoded[..j]);
         self.port
             .write_all(&encoded[..j])
             .with_context(|| format!("failed to send {:0X?}", &encoded[..j]))?;
@@ -88,28 +83,28 @@ impl GatewayDriver {
                     }
                 }
                 Ok(_) => {
-                    let to_encode = recv[0];
-                    if to_encode == 0xFF {
+                    let to_decode = recv[0];
+                    if to_decode == 0xFF {
                         break;
                     }
                     if j >= buffer.len() {
                         return Err(GatewayError::Overflow.into());
                     }
-                    if to_encode == max_val {
+                    if to_decode == max_val {
                         next_add = true;
                         continue;
                     }
                     buffer[j] = if next_add {
-                        to_encode + max_val
+                        to_decode + max_val
                     } else {
-                        to_encode
+                        to_decode
                     };
                     j += 1;
                     next_add = false;
                 }
             }
         }
-        println!("RX {}: {:0X?}", j, &buffer[..j]);
+        //println!("RX {}: {:0X?}", j, &buffer[..j]);
         Ok(postcard::from_bytes::<GatewayPacket>(&buffer[..j]).map_err(GatewayError::SerDe)?)
     }
 
