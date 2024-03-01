@@ -51,7 +51,7 @@ fn main() -> Result<()> {
         ret.copy_from_slice(c.finish().as_ref());
         ret
     };
-    let block_size = 32;
+    let block_size = 64;
     let index_count = {
         if binary.len() % block_size == 0 {
             binary.len() / block_size
@@ -95,6 +95,7 @@ fn main() -> Result<()> {
 
     let mut indexes_to_transmit: Vec<u16> = Vec::with_capacity(index_count);
     let mut highest_index: u16 = 0;
+    let mut last_acked_index: u16 = 0;
 
     loop {
         if indexes_to_transmit.is_empty() && highest_index == index_count as u16 {
@@ -105,7 +106,11 @@ fn main() -> Result<()> {
                 Some(i) => i as usize,
                 None => {
                     let tmp = highest_index;
-                    highest_index += 1;
+                    if last_acked_index + 12 >= highest_index {
+                        highest_index += 1;
+                    } else {
+                        eprint!("not advancing further, last acked {}, highest {}", last_acked_index, highest_index);
+                    }
                     tmp as usize
                 }
             };
@@ -124,7 +129,7 @@ fn main() -> Result<()> {
             }))?;
         }
 
-        match gateway.read_with_timeout(Duration::from_secs(1)) {
+        match gateway.read_with_timeout(Duration::from_millis(500)) {
             Ok(packet) => match packet {
                 GatewayPacket::OtaStatus(status) => {
                     for na in status.not_acked {
@@ -136,7 +141,8 @@ fn main() -> Result<()> {
                             indexes_to_transmit.push(na);
                         }
                     }
-                    sleep(Duration::from_secs(1));
+                    last_acked_index = status.last_acked;
+                    sleep(Duration::from_millis(150));
                 }
                 GatewayPacket::OtaDoneAck => {
                     println!("done");
