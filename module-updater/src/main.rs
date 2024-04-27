@@ -28,6 +28,9 @@ struct Args {
     debug_file: Option<String>
 }
 
+const INIT_TIMEOUT: Duration = Duration::from_secs(30);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+
 fn main() -> Result<()> {
     let args = Args::parse();
     /* let args = Args {
@@ -73,12 +76,12 @@ fn main() -> Result<()> {
     };
 
     gateway.write(HostPacket::OtaGetStatus)?;
-    match gateway.read_with_timeout(Duration::from_secs(5))? {
+    match gateway.read_with_timeout(RESPONSE_TIMEOUT)? {
         GatewayPacket::OtaStatus(s) => {
             if s.in_progress {
                 eprintln!("Aborting previously started update");
                 gateway.write(HostPacket::OtaAbortRequest)?;
-                match gateway.read_with_timeout(Duration::from_secs(15))? {
+                match gateway.read_with_timeout(INIT_TIMEOUT)? {
                     GatewayPacket::OtaAbortAck => {}
                     p => {
                         return Err(anyhow!("failed to abort the OTA update: {:?}", p));
@@ -99,7 +102,7 @@ fn main() -> Result<()> {
         block_size: block_size as u16,
         block_count: index_count as u16,
     }))?;
-    match gateway.read_with_timeout(Duration::from_secs(15))? {
+    match gateway.read_with_timeout(INIT_TIMEOUT)? {
         GatewayPacket::OtaInitAck => { /* update started */ }
         p => {
             return Err(anyhow!("failed to initialize the OTA update: {:?}", p));
@@ -149,7 +152,7 @@ fn main() -> Result<()> {
             }))?;
         }
 
-        match gateway.read_with_timeout(Duration::from_millis(500)) {
+        match gateway.read_with_timeout(RESPONSE_TIMEOUT) {
             Ok(packet) => match packet {
                 GatewayPacket::OtaStatus(status) => {
                     for na in status.not_acked {
