@@ -5,7 +5,7 @@ use clap::Parser;
 use gateway::GatewayDriver;
 use gateway_host_schema::*;
 use ring::digest;
-use std::{path::Path, thread::sleep, time::Duration};
+use std::{fs::File, io::Write, path::Path, thread::sleep, time::{Duration, Instant}};
 
 /// LoRa module OTA updater
 #[derive(Parser)]
@@ -13,12 +13,19 @@ struct Args {
     /// The device path to a serialport
     port: String,
 
+    /// The node address
+    destination_address: usize,
+
     /// Path to the firmware binary
     binary: String,
 
     /// The baudrate to open the port with
     #[clap(short, long, default_value = "115200")]
     baudrate: u32,
+
+    /// Diagnostic file output path
+    #[clap(long, default_value=None)]
+    debug_file: Option<String>
 }
 
 fn main() -> Result<()> {
@@ -38,6 +45,11 @@ fn main() -> Result<()> {
     if !binary_path.is_file() {
         return Err(anyhow!("\"{}\" is not a file", binary_path.display()));
     }
+
+    let mut debug_path = match args.debug_file {
+        Some(path) => Some(File::create(Path::new(path.as_str()))?),
+        None => None
+    };
 
     let mut gateway =
         GatewayDriver::new(&args.port, args.baudrate).context("Failed to open port")?;
@@ -79,8 +91,9 @@ fn main() -> Result<()> {
         }
     }
 
-    eprintln!("Initializing the peer update");
+    eprintln!("Initializing the peer update with {} blocks of size {}, {}B total", index_count, block_size, binary.len());
     gateway.write(HostPacket::OtaInit(OtaInitRequest {
+        destination_address: args.destination_address,
         binary_size: binary.len() as u32,
         binary_sha256: binary_checksum,
         block_size: block_size as u16,
@@ -96,6 +109,12 @@ fn main() -> Result<()> {
     let mut indexes_to_transmit: Vec<u16> = Vec::with_capacity(index_count);
     let mut highest_index: u16 = 0;
     let mut last_acked_index: u16 = 0;
+    let mut transmitted_count = 0;
+    let update_start_time = Instant::now();
+
+    if let Some(f) = debug_path.as_mut() {
+        f.write_all("time,txed,acked\n".as_bytes())?;
+    }
 
     loop {
         if indexes_to_transmit.is_empty() && highest_index == index_count as u16 {
@@ -123,6 +142,7 @@ fn main() -> Result<()> {
                 }
             };
             eprintln!("Transmitting block {}", i);
+            transmitted_count += 1;
             gateway.write(HostPacket::OtaData(OtaData {
                 index: i as u16,
                 data: binary[begin..end].iter().cloned().collect(),
@@ -156,6 +176,14 @@ fn main() -> Result<()> {
                 eprintln!("Error during read: {}", e);
             }
         }
+
+        if let Some(f) = debug_path.as_mut() {
+            f.write_all(format!("{},{},{}\n", update_start_time.elapsed().as_secs(), transmitted_count, last_acked_index).as_bytes())?;
+        }
+    }
+
+    if let Some(f) = debug_path.as_mut() {
+        f.write_all(format!("{},{},{}\n", update_start_time.elapsed().as_secs(), transmitted_count, index_count).as_bytes())?;
     }
 
     Ok(())
