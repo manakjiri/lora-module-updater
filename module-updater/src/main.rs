@@ -29,7 +29,7 @@ struct Args {
 }
 
 const INIT_TIMEOUT: Duration = Duration::from_secs(30);
-const RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn main() -> Result<()> {
     let args = Args::parse();
