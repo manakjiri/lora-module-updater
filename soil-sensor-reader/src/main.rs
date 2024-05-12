@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use gateway::GatewayDriver;
 use gateway_host_schema::*;
+use std::fs::OpenOptions;
 use std::{thread::sleep, time::Duration};
 use std::{fs::File, io::Write, path::Path};
 use chrono::prelude::*;
@@ -29,8 +30,15 @@ fn main() -> Result<()> {
         GatewayDriver::new(&args.port, args.baudrate).context("Failed to open port")?;
     gateway.ping().context("Failed to connect to Gateway")?;
 
-    let mut output_path = File::create(Path::new("moisture_log.csv")).context("Failed to create output file")?;
-    output_path.write_all("time,zone1,zone2,zone3,zone4\n".as_bytes())?;
+    let output_path = Path::new("sensor_log.csv");
+    let mut output_path = match output_path.exists() {
+        true => OpenOptions::new().append(true).open(output_path).context("Failed to open output file")?,
+        false => {
+            let mut f = File::create(output_path).context("Failed to create output file")?;
+            f.write_all("time,zone1,zone2,zone3,zone4\n".as_bytes())?;
+            f
+        }
+    };
     
     loop {
         gateway.write(HostPacket::SoilSensor(SoilSensorRequest{ destination_address: args.destination_address }))?;
