@@ -1,0 +1,10 @@
+{
+    "latitude": 50.0755,
+    "longitude": 14.4378,
+    "sensor_cal_low": [276, 277, 277, 277],
+    "sensor_cal_high": [728, 728, 581, 498],
+    "moisture_threshold": 20,
+    "precipitation_threshold": 50,
+    "day_start_hour": 6,
+    "day_end_hour": 18
+}
