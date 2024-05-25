@@ -12,6 +12,7 @@ use std::fs::OpenOptions;
 use std::{fs::File, io::Write, path::Path};
 use std::{thread::sleep, time::Duration};
 use weather::Weather;
+use tokio_websockets::{ClientBuilder, Error, Message};
 
 /// LoRa module OTA updater
 #[derive(Parser)]
@@ -106,7 +107,8 @@ fn main() -> Result<()> {
             Ok(resp) => match resp {
                 GatewayPacket::SoilSensorMoisture(s) => {
                     println!("{:?}", s);
-                    let pop = weather.get_precipitation_probability()?;
+                    //let pop = weather.get_precipitation_probability()?;
+                    let pop = 0.0;
                     let watering = figure_out_watering(&config, s, pop);
                     output_path.write_all(
                         format!(
