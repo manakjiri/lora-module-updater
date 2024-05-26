@@ -4,15 +4,17 @@ mod weather;
 use anyhow::{Context, Result};
 use chrono::prelude::*;
 use clap::Parser;
+use futures_util::{SinkExt, StreamExt};
 use gateway::GatewayDriver;
 use gateway_host_schema::*;
+use http::{Uri, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::OpenOptions;
 use std::{fs::File, io::Write, path::Path};
 use std::{thread::sleep, time::Duration};
+use tokio_websockets::{ClientBuilder, Message};
 use weather::Weather;
-use tokio_websockets::{ClientBuilder, Error, Message};
 
 /// LoRa module OTA updater
 #[derive(Parser)]
@@ -46,6 +48,7 @@ struct Config {
 struct WateringResult {
     watering: bool,
     moisture: f64,
+    zones: [u16; 4],
 }
 
 fn figure_out_watering(config: &Config, moisture: [u16; 4], pop: f64) -> WateringResult {
@@ -60,18 +63,33 @@ fn figure_out_watering(config: &Config, moisture: [u16; 4], pop: f64) -> Waterin
         .map(|(m, (low, high))| ((*m).clamp(*low, *high) - *low) as f64 / (*high - *low) as f64)
         .collect::<Vec<f64>>();
 
-    let moisture = moisture.iter().fold(0.0, |acc, m| acc + m) / moisture.len() as f64;
+    let total = moisture.iter().fold(0.0, |acc, m| acc + m) / moisture.len() as f64;
     let hours = Local::now().hour();
 
     WateringResult {
-        watering: moisture < (config.moisture_threshold / 100.0)
+        watering: total < (config.moisture_threshold / 100.0)
             && pop < (config.precipitation_threshold / 100.0)
             && (hours >= config.day_start_hour && hours < config.day_end_hour),
-        moisture,
+        moisture: total,
+        zones: moisture.iter().map(|m| (*m * 100.0) as u16).collect::<Vec<u16>>().try_into().unwrap_or_default(),
     }
 }
 
-fn main() -> Result<()> {
+async fn transmit_readings(readings: &[u16; 4]) -> Result<()> {
+    let uri = Uri::from_static("wss://new-horizons.lumias.cz:8765");
+    let (mut client, _) = ClientBuilder::from_uri(uri)
+        .add_header(HeaderName::from_static("watering-sensor-client"), HeaderValue::from_str("true")?)
+        .connect()
+        .await?;
+    client.send(Message::text(serde_json::json!({
+        "zones": readings,
+    }).to_string())).await.context("Failed to send ws message")?;
+    client.close().await.context("Failed to close ws connection")?;
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
     let config: Config = serde_json::from_reader(
         OpenOptions::new()
@@ -110,6 +128,9 @@ fn main() -> Result<()> {
                     //let pop = weather.get_precipitation_probability()?;
                     let pop = 0.0;
                     let watering = figure_out_watering(&config, s, pop);
+                    if let Err(e) = transmit_readings(&watering.zones).await {
+                        eprintln!("Failed to transmit readings: {:?}", e);
+                    }
                     output_path.write_all(
                         format!(
                             "{},{},{},{},{},{},{},{}\n",
@@ -134,6 +155,6 @@ fn main() -> Result<()> {
             }
         }
 
-        sleep(Duration::from_secs(15));
+        tokio::time::sleep(Duration::from_secs(15)).await;
     }
 }

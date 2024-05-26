@@ -16,4 +16,13 @@ thiserror = { version = "1.0.52" }
 chrono = { version = "0.4.38" }
 reqwest = {version = "0.12.4", features = ["json", "blocking"]}
 serde_json = "1.0.117"
-tokio-websockets = {version = "0.8.3", features = ["client"]}
+openssl = "0.10.64"
+futures-util = { version = "0.3.14", default-features = false, features = ["sink"] }
+tokio = { version = "1", default-features = false, features = ["net", "macros", "rt-multi-thread"] }
+tokio-util = { version = "0.7.3", features = ["codec", "io"] }
+tokio-rustls = "0.26"
+tokio-native-tls = { version = "0.3" }
+tokio-websockets = {version = "0.8.3", features = ["client", "openssl", "fastrand", "native-tls"]}
+base64 = { version = "0.22" }
+http = { version = "1"}
+httparse = { version = "1.6"}
