@@ -1,3 +1,4 @@
 [submodule "lora-module-fw"]
 	path = lora-module-fw
 	url = git@github.com:manakjiri/lora-module-fw.git
+	url = https://github.com/manakjiri/lora-module-fw.git
